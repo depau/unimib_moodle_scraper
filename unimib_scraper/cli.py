@@ -12,7 +12,6 @@ Options:
     --transfers=TRANSFERS, -t TRANSFERS   Number of parallel transfers [default: 12]
 """
 
-import json
 import multiprocessing
 import multiprocessing.pool
 import os
@@ -21,7 +20,7 @@ import sys
 import time
 from collections import namedtuple
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Mapping
 from urllib.parse import parse_qs, urlparse
 
 import enlighten
@@ -39,6 +38,8 @@ if "__main__.py" in argv0:
 doc = __doc__.replace("ARGV0", argv0)
 
 Course = namedtuple("Course", ["id", "category", "name"])
+
+LANG_REGEX = re.compile(r"{mlang (?P<lang>\w+)}(?P<name>.*?){mlang}")
 
 IGNORED_MODULES = [
     "assign",
@@ -118,6 +119,16 @@ def escape_path(path: List[str]):
     return [escape_path_name(p) for p in path]
 
 
+def get_lang_or_first(string: str, preferred_lang: str = "it") -> str:
+    matches = LANG_REGEX.findall(string)
+    if len(matches) == 0:
+        return string
+    for lang, name in matches:
+        if lang == preferred_lang:
+            return name
+    return matches[0][1]
+
+
 class WorkerPool:
     def __init__(self, nproc: int):
         self.pool = multiprocessing.pool.ThreadPool(nproc)
@@ -166,6 +177,8 @@ class Scraper:
         self._last_progress_update = 0
         self._downloaded_bytes = 0
 
+        self.categories: Mapping[int, dict] = {}
+
     def __enter__(self):
         self.pool.__enter__()
         return self
@@ -186,35 +199,28 @@ class Scraper:
             self._last_progress_update = time.time()
 
     def scrape(self):
-        # noinspection PyTypeChecker
-        mobile_content = self.moodle.tool.mobile.get_content(
-            "block_filtered_course_list",
-            "mobile_block_view",
-            args=[
-                {"name": "appcustomulscheme", "value": "moodlemobile"},
-                {"name": "appid", "value": "com.moodle.moodlemobile"},
-                {"name": "appisdesktop", "value": "0"},
-                {"name": "appismobile", "value": "0"},
-                {"name": "appiswide", "value": "0"},
-                {"name": "applang", "value": "en-us"},
-                {"name": "appplatform", "value": "browser"},
-                {"name": "appversioncode", "value": "41100"},
-                {"name": "appversionname", "value": "4.1.1"},
-                {"name": "blockid", "value": "94246"},  # TODO: make this dynamic
-                {"name": "contextlevel", "value": "user"},
-                {"name": "instanceid", "value": str(self.site_info.userid)},
-                {"name": "userid", "value": str(self.site_info.userid)},
-            ],
+        print("Fetching course categories...")
+        categories = self.moodle(
+            "core_course_get_categories", criteria=[], moodlewssettinglang="it"
         )
 
-        categories = json.loads(mobile_content.otherdata[0].value)
-
-        courses: List[Course] = []
-
+        out_categories = {}
         for category in categories:
-            cat_name = category["title"]
-            for course in category["courses"]:
-                courses.append(Course(course["id"], cat_name, course["fullname"]))
+            category["name"] = get_lang_or_first(category["name"])
+            category["path"] = [int(i) for i in category["path"].split("/") if i]
+            out_categories[category["id"]] = category
+
+        self.categories = out_categories
+
+        print("Fetching courses...")
+        courses = self.moodle(
+            "core_enrol_get_users_courses",
+            userid=self.site_info.userid,
+            returnusercount=0,
+            moodlewssettingfilter=True,
+            moodlewssettingfileurl=True,
+            moodlewssettinglang="it",
+        )
 
         with self.progress.counter(
             total=len(courses),
@@ -223,12 +229,19 @@ class Scraper:
             leave=False,
         ) as progress:
             for course in courses:
-                print(f"Checking course {course.category} / {course.name}")
+                if course["category"] and course["category"] in self.categories:
+                    category = self.categories[course["category"]]
+                    path = [self.categories[i]["name"] for i in category["path"]]
+                else:
+                    path = []
+                path.append(get_lang_or_first(course["fullname"]))
+
+                print(f"Checking course {' / '.join(path)}")
 
                 # The moodlepy implementation of core_course_get_contents is broken
                 content = self.moodle(
                     "core_course_get_contents",
-                    courseid=course.id,
+                    courseid=course["id"],
                     options=[
                         {"name": "excludemodules", "value": "0"},
                         {"name": "excludecontents", "value": "0"},
@@ -236,7 +249,7 @@ class Scraper:
                     ],
                 )
 
-                self.scrape_course([course.category, course.name], content)
+                self.scrape_course(path, content)
                 progress.update()
 
     def fix_download_plugin_url(self, url):
