@@ -1,19 +1,20 @@
 """
-Usage: ARGV0 [-j COOKIEJAR] [-d DESTDIR] [-t TRANSFERS] [-u username] [-p password]
+Usage: ARGV0 [-j COOKIEJAR] [-d DESTDIR] [-t TRANSFERS] [-k VIDEOS_JSON] [-u username] [-p password]
 
 If username and password are not specified, they will be fetched from the environment variables
 UNIMIB_USERNAME and UNIMIB_PASSWORD.
 
 Options:
-    --help, -h                            Show this screen.
-    --version, -v                         Show version.
-    --cookiejar=COOKIEJAR, -j COOKIEJAR   Path to the cookies persistence file [default: cookies.json]
-    --destdir=DESTDIR, -d DESTDIR         Destination directory [default: .]
-    --transfers=TRANSFERS, -t TRANSFERS   Number of parallel transfers [default: 12]
-    --password=PASSWORD, -p PASSWORD      Your password
-    --username=USER, -u USER              Username
+    --help, -h                                 Show this screen.
+    --version, -v                              Show version.
+    --cookiejar=COOKIEJAR, -j COOKIEJAR        Path to the cookies persistence file [default: cookies.json]
+    --destdir=DESTDIR, -d DESTDIR              Destination directory [default: .]
+    --transfers=TRANSFERS, -t TRANSFERS        Number of parallel transfers [default: 12]
+    --videos-json=VIDEOS_JSON, -k VIDEOS_JSON  Path to a JSON where the lesson video URLs will be stored [default: videos.json]
+    --password=PASSWORD, -p PASSWORD           Your password
+    --username=USER, -u USER                   Username
 """
-
+import json
 import multiprocessing
 import multiprocessing.pool
 import os
@@ -157,11 +158,23 @@ class WorkerPool:
 # noinspection PyMethodMayBeStatic
 class Scraper:
     def __init__(
-        self, browser: BrowserSession, moodle: Moodle, destdir: str, transfers: int = 12
+        self,
+        browser: BrowserSession,
+        moodle: Moodle,
+        destdir: str,
+        videos_json: str,
+        transfers: int = 12,
     ):
         self.browser = browser
         self.moodle = moodle
         self.destdir = destdir
+        self.videos_json = videos_json
+
+        if os.path.exists(videos_json):
+            with open(videos_json, "r") as f:
+                self.videos = json.load(f)
+        else:
+            self.videos = {}
 
         self.site_info = moodle.core.webservice.get_site_info()
 
@@ -337,8 +350,13 @@ class Scraper:
             if progress is not None:
                 progress.close()
 
-    def download_kaltura_video(self, path: List[str], module: dict):
+    def save_kaltura_video_url(self, path: List[str], module: dict):
         # Adapted from https://github.com/Blastd/UnimibKalturaResolver/blob/master/resolver.js
+
+        escaped_path = escape_path(path + [f"{module['name']}.mp4"])
+        file = Path(os.path.join(self.destdir, *escaped_path))
+        if str(file) in self.videos:
+            return
 
         print(f" - {' / '.join(path)}: Downloading video '{module['name']}.mp4'")
 
@@ -361,10 +379,9 @@ class Scraper:
 
         video_url = Urls.VIDEO.format(entry_id=entry_id)
 
-        escaped_path = escape_path(path + [f"{module['name']}.mp4"])
-        file = Path(os.path.join(self.destdir, *escaped_path))
-
-        self._do_download(file, video_url)
+        self.videos[str(file)] = video_url
+        with open(self.videos_json, "w") as f:
+            json.dump(self.videos, f, indent=2)
 
     def scrape_course(self, path: List[str], data: Union[dict, list]):
         if isinstance(data, list):
@@ -388,7 +405,7 @@ class Scraper:
                     case "resource":
                         self.download_resources(path, data)
                     case "kalvidres":
-                        self.pool.submit(self.download_kaltura_video, path, data)
+                        self.save_kaltura_video_url(path, data)
                     case modname:
                         print(
                             f" - {' / '.join(path)}: Unknown module '{modname}' ({data.get('modplural')})"
@@ -407,13 +424,16 @@ def main():
     cookie_jar = args["--cookiejar"]
     destdir = args["--destdir"]
     transfers = int(args["--transfers"])
+    videos_json = args["--videos-json"]
 
     with BrowserSession(cookie_jar) as browser:
         token = browser.login(username, password)
         print(f"Logged in with wstoken {token}")
 
         moodle = Moodle(Urls.REST, token)
-        with Scraper(browser, moodle, destdir, transfers=transfers) as scraper:
+        with Scraper(
+            browser, moodle, destdir, videos_json, transfers=transfers
+        ) as scraper:
             print(
                 f"Scraping from '{scraper.site_info.sitename}' as user {scraper.site_info.fullname}"
             )
