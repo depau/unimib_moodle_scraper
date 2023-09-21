@@ -409,7 +409,7 @@ def main():
     transfers = int(args["--transfers"])
 
     with BrowserSession(cookie_jar) as browser:
-        token, private_token = browser.login(username, password)
+        token = browser.login(username, password)
         print(f"Logged in with wstoken {token}")
 
         moodle = Moodle(Urls.REST, token)

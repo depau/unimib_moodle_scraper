@@ -143,6 +143,6 @@ class BrowserSession(requests.Session):
         token = redirect_url.split("token=")[1].split("&")[0]
 
         decoded = base64.b64decode(token)
-        site_id, token, private_token = decoded.split(b":::")
+        _, token = decoded.split(b":::")[:2]
 
-        return token.decode("utf-8"), private_token.decode("utf-8")
+        return token.decode("utf-8")
