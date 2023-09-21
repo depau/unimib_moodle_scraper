@@ -1,5 +1,5 @@
 """
-Usage: ARGV0 [-j COOKIEJAR] [-d DESTDIR] [-t TRANSFERS] [username] [password]
+Usage: ARGV0 [-j COOKIEJAR] [-d DESTDIR] [-t TRANSFERS] [-u username] [-p password]
 
 If username and password are not specified, they will be fetched from the environment variables
 UNIMIB_USERNAME and UNIMIB_PASSWORD.
@@ -10,6 +10,8 @@ Options:
     --cookiejar=COOKIEJAR, -j COOKIEJAR   Path to the cookies persistence file [default: cookies.json]
     --destdir=DESTDIR, -d DESTDIR         Destination directory [default: .]
     --transfers=TRANSFERS, -t TRANSFERS   Number of parallel transfers [default: 12]
+    --password=PASSWORD, -p PASSWORD      Your password
+    --username=USER, -u USER              Username
 """
 
 import multiprocessing
@@ -396,11 +398,10 @@ class Scraper:
 def main():
     args = docopt(doc, version="unimib_login 0.1")
     try:
-        username = args["username"] or os.environ["UNIMIB_USERNAME"]
-        password = args["password"] or os.environ["UNIMIB_PASSWORD"]
+        username = args["--username"] or os.environ["UNIMIB_USERNAME"]
+        password = args["--password"] or os.environ["UNIMIB_PASSWORD"]
     except KeyError:
         print("Username and/or password not provided")
-        print(doc)
         return
 
     cookie_jar = args["--cookiejar"]
