@@ -23,8 +23,13 @@ python -m unimib_scraper -d ./downloads --transfers 25 -u n.lastname@campus.unim
 The login process is a bit fragile; if you get an error at the beginning, you can try copying the cookies from your
 browser.
 
-Go to https://elearning.unimib.it, log in. Open the developer tools, go to the network tab, reload the page, and copy
-the cookies from any request to `elearning.unimib.it` into the `cookies.json` file.
+Open `cookies.json` and see which cookies are defined.
+
+Go to https://elearning.unimib.it, log in. Open the developer tools, go to the
+network tab, reload the page, and copy
+the cookies from any request to `elearning.unimib.it` into the `cookies.json`
+file. You don't need to copy all of them, just those that are present
+in `cookies.json`.
 
 ## Credits
 
