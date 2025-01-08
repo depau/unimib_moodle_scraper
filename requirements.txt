@@ -1,6 +1,0 @@
-beautifulsoup4
-requests
-moodlepy
-docopt-ng
-black
-enlighten

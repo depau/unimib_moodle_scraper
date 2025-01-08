@@ -9,13 +9,9 @@ don't intend to support other deployments.
 ## Usage
 
 ```bash
-python3 -m venv venv             # create a virtual environment
-source venv/bin/activate         # activate the virtual environment
-pip install -r requirements.txt  # install the dependencies
-
-python -m unimib_scraper --help  # show the help
+uv run python -m unimib_scraper --help  # show the help
 # for instance
-python -m unimib_scraper -d ./downloads --transfers 25 -u n.lastname@campus.unimib.it -p PaSsWoRd
+uv run python -m unimib_scraper -d ./downloads --transfers 25 -u n.lastname@campus.unimib.it -p PaSsWoRd
 ```
 
 ## Login issues
